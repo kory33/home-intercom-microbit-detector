@@ -1,0 +1,27 @@
+name: Build CODAL
+
+on:
+  push:
+    branches:
+     - master
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-16.04
+    name: build and upload hex
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install toolchain
+        run: sh ./.github/workflows/scripts/install-toolchain-ubuntu.sh
+      - name: Check Versions
+        run: |
+          arm-none-eabi-gcc --version
+          cmake --version
+          ninja --version
+      - name: Build using build.py
+        run: python build.py
+      - name: Upload hex file
+        uses: actions/upload-artifact@v1
+        with:
+          name: output-hex
+          path: MICROBIT.hex
