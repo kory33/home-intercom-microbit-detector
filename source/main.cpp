@@ -28,7 +28,7 @@ public:
         }
 
         // take average for normalization
-        const auto sum = std::accumulate(decoded_values.begin(), decoded_values.end(), (int32_t) 0);
+        const auto sum = std::accumulate(decoded_values.cbegin(), decoded_values.cend(), (int32_t) 0);
         const auto average = (int16_t) (sum / decoded_buffer_size);
 
         for (const auto& v : decoded_values) {
