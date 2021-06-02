@@ -109,7 +109,7 @@ public:
         }
     }
 
-    bool detected() const {
+    [[nodiscard]] bool detected() const {
         if (detection_history.size() < detection_history_length) {
             return false;
         }
@@ -194,6 +194,7 @@ public:
                 serial.printf("_\t");
             }
         }
+        serial.printf("\n");
 
         return DEVICE_OK;
     }
