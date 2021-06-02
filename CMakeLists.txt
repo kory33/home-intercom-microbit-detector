@@ -165,11 +165,12 @@ endif()
 
 # cpp
 if("${device.cpp_flags}" STRGREATER "")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_C_FAMILY_FLAGS_INIT} ${device.cpp_flags}")
+    # internal libraries use register keyword which has been deprecated in C++17.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_C_FAMILY_FLAGS_INIT} ${device.cpp_flags} -Wno-register")
     set(CMAKE_CXX_LINK_FLAGS "${device.cpp_flags}")
 
-    string(REPLACE "-std=c++11" "-std=c++14" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    string(REPLACE "-std=c++11" "-std=c++14" CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}")
+    string(REPLACE "-std=c++11" "-std=c++17" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(REPLACE "-std=c++11" "-std=c++17" CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}")
 endif()
 
 # linker opts
