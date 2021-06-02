@@ -4,6 +4,124 @@
 #include <algorithm>
 #include "MicroBit.h"
 
+MicroBit uBit;
+
+constexpr int sampling_rate = 11025;
+
+class FrequencyDetector
+{
+    // internal states of a detector
+    std::deque<bool> delayed_detection_history;
+    std::deque<bool> detection_history;
+    std::vector<float_t> repacked_buffer;
+
+    // configurations
+    const float_t frequency;
+    const float_t frequency_threshold;
+
+    // just in case, we are repacking data from ADC to our own buffer.
+    // ADC normally delivers data in a chunk of size 256 so we won't normally cross boundary here
+    static constexpr uint16_t repacked_buffer_size = 256;
+
+    static constexpr float_t detection_frame_per_millisecond =
+            ((float_t) sampling_rate / 1000.0) / (float_t) repacked_buffer_size;
+
+    /**
+     * the number of detection frames to go back in detection logic
+     */
+    const uint16_t delayed_history_length;
+
+    /**
+     * the number of detection frames to keep for detection
+     */
+    const uint16_t detection_history_length;
+
+    /**
+     * number of frequency-detected frames (within detection_history_length) required to confirm frequency detection
+     */
+    const uint16_t detection_threshold_integer;
+
+    /**
+     * run detection algorithm within repacked buffer with intention to empty the buffer
+     */
+    bool detect_in_full_repacked_buffer() {
+        // We use Goertzel algorithm (https://en.wikipedia.org/wiki/Goertzel_algorithm)
+        constexpr auto pi = 3.1415926535898f;
+
+        const auto omega = 2.0f * pi * frequency / sampling_rate;
+        const auto cos_omega = cos(omega);
+        const auto coefficient = 2 * cos_omega;
+
+        auto s_prev = 0.0f;
+        auto s_prev_2 = 0.0f;
+
+        for (const auto& next_sample : repacked_buffer) {
+            const auto s = next_sample + coefficient * s_prev - s_prev_2;
+            s_prev_2 = s_prev;
+            s_prev = s;
+        }
+
+        const auto power = s_prev_2 * s_prev_2 + s_prev * s_prev - coefficient * s_prev * s_prev_2;
+
+//        uBit.serial.printf("%d\t", (uint16_t) (power * 1000));
+
+        return power > frequency_threshold;
+    }
+
+public:
+    /**
+     * @param frequency the value of the frequency (in Hz) to detect
+     * @param delay_ms approximate delay (in ms) to introduce in the detection
+     * @param duration_ms approximate duration (in ms) in which the specified frequency component should be above threshold
+     * @param frequency_threshold threshold to admit detection in a frame
+     * @param detection_threshold rate of detected frame to non-detected frames to confirm detection (default 0.9)
+     */
+    FrequencyDetector(float_t frequency, float_t delay_ms, float_t duration_ms,
+                      float_t frequency_threshold, float_t detection_threshold = 0.9f) :
+            delayed_detection_history(std::deque<bool>()),
+            detection_history(std::deque<bool>()),
+            repacked_buffer(std::vector<float_t>()),
+            frequency(frequency),
+            frequency_threshold(frequency_threshold),
+
+            delayed_history_length(max((uint16_t) (delay_ms * detection_frame_per_millisecond), 1)),
+            detection_history_length(max((uint16_t) (duration_ms * detection_frame_per_millisecond), 1)),
+            detection_threshold_integer((uint16_t) ((float_t) detection_history_length * detection_threshold)) {}
+
+    void process_buffer(const std::vector<float_t>& input) {
+        for (const auto& v: input) {
+            repacked_buffer.push_back(v);
+
+            if (repacked_buffer.size() >= repacked_buffer_size) {
+                delayed_detection_history.push_front(detect_in_full_repacked_buffer());
+                repacked_buffer.clear();
+            }
+        }
+
+        // move excessive data from delayed detection history to detection history
+        while (delayed_detection_history.size() > delayed_history_length) {
+            detection_history.push_front(delayed_detection_history.back());
+            delayed_detection_history.pop_back();
+        }
+
+        // delete excessive data in detection history
+        while (detection_history.size() > detection_history_length) {
+            detection_history.pop_back();
+        }
+    }
+
+    bool detected() const {
+        if (detection_history.size() < detection_history_length) {
+            return false;
+        }
+
+        const auto detection_count =
+                std::count(detection_history.cbegin(), detection_history.cend(), true);
+
+        return detection_count >= detection_threshold_integer;
+    }
+};
+
 class Printer : public DataSink
 {
     DataSource &upstream;
@@ -46,8 +164,6 @@ public:
 };
 
 int main() {
-    MicroBit uBit;
-
     uBit.init();
 
     uBit.serial.printf("\033[2JStarting micro:bit...\n");
