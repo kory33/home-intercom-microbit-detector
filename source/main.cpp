@@ -19,8 +19,7 @@ class FrequencyDetector
     const float_t frequency;
     const float_t frequency_threshold;
 
-    // just in case, we are repacking data from ADC to our own buffer.
-    // ADC normally delivers data in a chunk of size 256 so we won't normally cross boundary here
+    // we are repacking data from ADC to our own buffer
     static constexpr uint16_t repacked_buffer_size = 256;
 
     static constexpr float_t detection_frame_per_millisecond =
@@ -126,9 +125,41 @@ class Printer : public DataSink
 {
     DataSource &upstream;
     Serial &serial;
+    std::array<FrequencyDetector, 4> frequencyDetectors;
 public:
-    Printer(DataSource &upstream, Serial &serial): upstream(upstream), serial(serial) {
-    }
+    Printer(DataSource &upstream, Serial &serial):
+        upstream(upstream),
+        serial(serial),
+        /*
+         * My intercom has the following ring tone pattern:
+         *  - 650Hz for 750ms
+         *  - 510Hz for 1250ms
+         *  - 650Hz for 750ms
+         *  - 510Hz for 1250ms
+         *
+         * To detect this pattern, we listen on
+         *  - 650Hz for 500ms, with 3100ms delay
+         *  - 510Hz for 750ms, with 2100ms delay
+         *  - 650Hz for 500ms, with 1100ms delay
+         *  - 510Hz for 750ms, with 0ms delay
+         *
+         * I expect all of these detectors to detect sound by the time last 510Hz sound has played for 1000ms,
+         * so there is enough time window for each detectors to catch intercom sound.
+         *
+         * Roughly these detection windows look like this:
+         *
+         * 650Hz: ...-|<= 750ms =>|-------------------|<= 750ms =>|---------------------...
+         *
+         * 510Hz: ...-------------|<===== 1250ms ====>|-----------|<===== 1250ms ====>|-...
+         *
+         *               |<=d1=>|   |<== d 2 ==>|        |<=d3=>|     |<== d 4 ==>|
+         */
+        frequencyDetectors({
+            FrequencyDetector(650.0, 3100.0, 500.0, 0.2, 0.8),
+            FrequencyDetector(510.0, 2100.0, 750.0, 0.2, 0.8),
+            FrequencyDetector(650.0, 1100.0, 500.0, 0.2, 0.8),
+            FrequencyDetector(510.0, 0.0, 750.0, 0.2, 0.8)
+        }) {}
 
     int pullRequest() override {
         const auto buffer = upstream.pull();
@@ -154,9 +185,14 @@ public:
             float_values.push_back(normalized_value);
         }
 
-        for (const auto& v : float_values) {
-            if (v > 0.0f) serial.printf("*");
-            else serial.printf("_");
+        for (auto& d : frequencyDetectors) {
+            d.process_buffer(float_values);
+
+            if (d.detected()) {
+                serial.printf("*\t");
+            } else {
+                serial.printf("_\t");
+            }
         }
 
         return DEVICE_OK;
