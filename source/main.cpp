@@ -4,8 +4,6 @@
 #include <algorithm>
 #include "MicroBit.h"
 
-MicroBit uBit;
-
 constexpr int sampling_rate = 11025;
 
 class FrequencyDetector
@@ -201,23 +199,25 @@ public:
 };
 
 int main() {
-    uBit.init();
+    auto uBit = std::make_unique<MicroBit>();
 
-    uBit.serial.printf("\033[2JStarting micro:bit...\n");
+    uBit->init();
+
+    uBit->serial.printf("\033[2JStarting micro:bit...\n");
 
     // activate microphone
-    uBit.io.runmic.setDigitalValue(1);
-    uBit.io.runmic.setHighDrive(true);
+    uBit->io.runmic.setDigitalValue(1);
+    uBit->io.runmic.setHighDrive(true);
 
-    auto mic_channel = std::unique_ptr<NRF52ADCChannel>(uBit.adc.getChannel(uBit.io.microphone));
+    auto mic_channel = std::unique_ptr<NRF52ADCChannel>(uBit->adc.getChannel(uBit->io.microphone));
     mic_channel->setGain(7, 0);
     mic_channel->output.setBlocking(true);
 
-    auto sink = std::make_unique<Printer>(mic_channel->output, uBit.serial);
+    auto sink = std::make_unique<Printer>(mic_channel->output, uBit->serial);
     mic_channel->output.connect(*sink);
 
     #pragma ide diagnostic ignored "EndlessLoop"
     while (true) {
-        uBit.wait(10);
+        uBit->wait(10);
     }
 }
