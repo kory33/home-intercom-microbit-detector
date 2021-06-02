@@ -155,10 +155,10 @@ public:
          *               |<=d1=>|   |<== d 2 ==>|        |<=d3=>|     |<== d 4 ==>|
          */
         frequencyDetectors({
-            FrequencyDetector(650.0, 3100.0, 500.0, 0.2, 0.8),
-            FrequencyDetector(510.0, 2100.0, 750.0, 0.2, 0.8),
-            FrequencyDetector(650.0, 1100.0, 500.0, 0.2, 0.8),
-            FrequencyDetector(510.0, 0.0, 750.0, 0.2, 0.8)
+            FrequencyDetector(650.0, 3100.0, 500.0, 5.0, 0.8),
+            FrequencyDetector(510.0, 2100.0, 750.0, 0.5, 0.8),
+            FrequencyDetector(650.0, 1100.0, 500.0, 5.0, 0.8),
+            FrequencyDetector(510.0, 0.0, 750.0, 0.5, 0.8)
         }) {}
 
     int pullRequest() override {
