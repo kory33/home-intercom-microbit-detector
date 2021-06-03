@@ -118,10 +118,14 @@ public:
 
 class FrequencyDetectorController : public DataSink
 {
+    // we do not invoke callback within approximately 5 seconds of first detecting a pattern
+    static const auto detection_cool_down_tick = 40 * 5;
+
     DataSource &upstream;
     Serial &serial;
     std::function<void()> callback;
     std::array<FrequencyDetector, 4> frequencyDetectors;
+    uint16_t ticks_to_wait_before_detection = 0;
 public:
     FrequencyDetectorController(DataSource &upstream, Serial &serial, std::function<void()> onDetectedEvent):
         upstream(upstream),
@@ -194,9 +198,14 @@ public:
 
         serial.printf("\n");
 
-        if (std::all_of(frequencyDetectors.begin(), frequencyDetectors.end(), [](auto d) { return d.detected(); })) {
+        if (ticks_to_wait_before_detection == 0 &&
+            std::all_of(frequencyDetectors.begin(), frequencyDetectors.end(), [](auto d) { return d.detected(); })) {
+
+            ticks_to_wait_before_detection = detection_cool_down_tick;
             invoke(this->callback);
         }
+
+        if (ticks_to_wait_before_detection > 0) ticks_to_wait_before_detection -= 1;
 
         return DEVICE_OK;
     }
