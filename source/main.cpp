@@ -118,7 +118,7 @@ public:
 
 class FrequencyDetectorController : public DataSink
 {
-    // we do not invoke callback within approximately 5 seconds of first detecting a pattern
+    // we should not invoke callback for approximately 5 seconds after first detecting a pattern
     static const auto detection_cool_down_tick = 40 * 5;
 
     DataSource &upstream;
