@@ -2,9 +2,10 @@
 #include <queue>
 #include <numeric>
 #include <algorithm>
+#include <string>
 #include "MicroBit.h"
 
-constexpr int sampling_rate = 11025;
+static constexpr auto sampling_rate = 11025;
 
 class FrequencyDetector
 {
@@ -60,8 +61,6 @@ class FrequencyDetector
 
         const auto power = s_prev_2 * s_prev_2 + s_prev * s_prev - coefficient * s_prev * s_prev_2;
 
-//        uBit.serial.printf("%d\t", (uint16_t) (power * 1000));
-
         return power > frequency_threshold;
     }
 
@@ -112,22 +111,22 @@ public:
             return false;
         }
 
-        const auto detection_count =
-                std::count(detection_history.cbegin(), detection_history.cend(), true);
-
+        const auto detection_count = std::count(detection_history.cbegin(), detection_history.cend(), true);
         return detection_count >= detection_threshold_integer;
     }
 };
 
-class Printer : public DataSink
+class FrequencyDetectorController : public DataSink
 {
     DataSource &upstream;
     Serial &serial;
+    std::function<void()> callback;
     std::array<FrequencyDetector, 4> frequencyDetectors;
 public:
-    Printer(DataSource &upstream, Serial &serial):
+    FrequencyDetectorController(DataSource &upstream, Serial &serial, std::function<void()> onDetectedEvent):
         upstream(upstream),
         serial(serial),
+        callback(std::move(onDetectedEvent)),
         /*
          * My intercom has the following ring tone pattern:
          *  - 650Hz for 750ms
@@ -192,9 +191,85 @@ public:
                 serial.printf("_\t");
             }
         }
+
         serial.printf("\n");
 
+        if (std::all_of(frequencyDetectors.begin(), frequencyDetectors.end(), [](auto d) { return d.detected(); })) {
+            invoke(this->callback);
+        }
+
         return DEVICE_OK;
+    }
+};
+
+struct Esp01MessageRouting {
+    std::string wlan_ap_ssid;
+    std::string wlan_ap_password;
+};
+
+class Esp01MessagingSurrogate
+{
+    const std::unique_ptr<MicroBitSerial> serial;
+    const Esp01MessageRouting routing;
+
+    void discard(uint16_t size) const {
+        serial->read(size);
+    }
+
+    void sendCommand(const std::string& string) const {
+        serial->printf("%d\r\n", string.c_str());
+        discard(string.length() + 2);
+    }
+
+    void flushRx(unsigned long sleep_ms) const {
+        fiber_sleep(sleep_ms);
+        serial->clearRxBuffer();
+    }
+
+    /**
+     * Read all letters corresponding to the given string. If a mismatch happens in the middle,
+     * wait for the specified amount and then flush the buffer.
+     */
+    void expect(const std::string& string, unsigned long sleep_ms_if_mismatched) const {
+        for (const auto& c : string) {
+            if (serial->getChar(SYNC_SLEEP) != c) {
+                flushRx(sleep_ms_if_mismatched);
+                return;
+            }
+        }
+    }
+
+public:
+    Esp01MessagingSurrogate(Esp01MessageRouting routing,
+                            NRF52Pin tx,
+                            NRF52Pin rx,
+                            uint8_t rxBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE,
+                            uint8_t txBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE):
+        serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)),
+        routing(std::move(routing)) {};
+
+    /**
+     * On assuming that command echo back is turned on, initialize the module
+     */
+    void init() const {
+        // wait for the module to show up
+        fiber_sleep(1000);
+
+        // reset to factory default
+        sendCommand("AT+RESTORE");
+        flushRx(3000);
+
+        // set to station mode
+        sendCommand("AT+CWMODE_CUR=1");
+        flushRx(500);
+
+        // connect to access point
+        sendCommand("AT+CWJAP_CUR=\"" + routing.wlan_ap_ssid + "\", \"" + routing.wlan_ap_password + "\"");
+        flushRx(10000);
+    }
+
+    void onSoundDetectedEvent() {
+        // uBit->serial.printf("Sound detected!");
     }
 };
 
@@ -203,7 +278,23 @@ int main() {
 
     uBit->init();
 
-    uBit->serial.printf("\033[2JStarting micro:bit...\n");
+    uBit->serial.printf("\033[2JStarted micro:bit!\n");
+
+    uBit->serial.printf("Setting up ESP-01...\n");
+
+    auto esp_01_message_routing = Esp01MessageRouting {
+        "",
+        ""
+    };
+
+    auto esp01sSurrogate = std::make_shared<Esp01MessagingSurrogate>(
+            esp_01_message_routing,
+            uBit->io.P14, uBit->io.P13, 32, 32
+    );
+
+    // esp01sSurrogate->init();
+
+    uBit->serial.printf("Setting up microphone...\n");
 
     // activate microphone
     uBit->io.runmic.setDigitalValue(1);
@@ -213,7 +304,11 @@ int main() {
     mic_channel->setGain(7, 0);
     mic_channel->output.setBlocking(true);
 
-    auto sink = std::make_unique<Printer>(mic_channel->output, uBit->serial);
+    auto sink = std::make_unique<FrequencyDetectorController>(
+            mic_channel->output, uBit->serial,
+            [esp01sSurrogate] () { esp01sSurrogate->onSoundDetectedEvent(); }
+    );
+
     mic_channel->output.connect(*sink);
 
     #pragma ide diagnostic ignored "EndlessLoop"
