@@ -211,97 +211,75 @@ public:
     }
 };
 
-struct Esp01MessageRouting {
-    std::string wlan_ap_ssid;
-    std::string wlan_ap_password;
+auto uBit = std::make_unique<MicroBit>();
+
+enum class Esp01SCustomCommand : char {
+    ConfirmStartup = 'C',
+    ConfirmRemoteAlive = 'R',
+    NotifySoundDetection = 'N',
 };
 
 class Esp01MessagingSurrogate
 {
     const std::unique_ptr<MicroBitSerial> serial;
-    const Esp01MessageRouting routing;
 
-    void discard(uint16_t size) const {
-        serial->read(size);
+    void sendCommand(Esp01SCustomCommand command) {
+        serial->putc(static_cast<char>(command));
     }
 
-    void sendCommand(const std::string& string) const {
-        serial->printf("%d\r\n", string.c_str());
-        discard(string.length() + 2);
-    }
-
-    void flushRx(unsigned long sleep_ms) const {
-        fiber_sleep(sleep_ms);
+    void flushRx() const {
         serial->clearRxBuffer();
     }
 
-    /**
-     * Read all letters corresponding to the given string. If a mismatch happens in the middle,
-     * wait for the specified amount and then flush the buffer.
-     */
-    void expect(const std::string& string, unsigned long sleep_ms_if_mismatched) const {
-        for (const auto& c : string) {
-            if (serial->getChar(SYNC_SLEEP) != c) {
-                flushRx(sleep_ms_if_mismatched);
-                return;
-            }
-        }
+    [[nodiscard]] std::string waitAndReadAsync(unsigned long sleep_ms, unsigned int size) const {
+        fiber_sleep(sleep_ms);
+
+        const auto read_result = serial->read((int) size, ASYNC);
+
+        return std::string(read_result.toCharArray());
     }
 
 public:
-    Esp01MessagingSurrogate(Esp01MessageRouting routing,
-                            NRF52Pin tx,
+    Esp01MessagingSurrogate(NRF52Pin tx,
                             NRF52Pin rx,
                             uint8_t rxBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE,
                             uint8_t txBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE):
-        serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)),
-        routing(std::move(routing)) {};
+        serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)) {};
 
     /**
      * On assuming that command echo back is turned on, initialize the module
      */
-    void init() const {
-        // wait for the module to show up
-        fiber_sleep(1000);
+    void init() {
+        const std::string expected_echo = "C:STARTED";
 
-        // reset to factory default
-        sendCommand("AT+RESTORE");
-        flushRx(3000);
+        while (true) {
+            sendCommand(Esp01SCustomCommand::ConfirmStartup);
 
-        // set to station mode
-        sendCommand("AT+CWMODE_CUR=1");
-        flushRx(500);
+            auto read_string = waitAndReadAsync(300, expected_echo.length());
 
-        // connect to access point
-        sendCommand("AT+CWJAP_CUR=\"" + routing.wlan_ap_ssid + "\", \"" + routing.wlan_ap_password + "\"");
-        flushRx(10000);
+            if (read_string == expected_echo) return;
+
+            flushRx();
+        }
     }
 
     void onSoundDetectedEvent() {
-        // uBit->serial.printf("Sound detected!");
+        sendCommand(Esp01SCustomCommand::NotifySoundDetection);
     }
 };
 
 int main() {
-    auto uBit = std::make_unique<MicroBit>();
-
     uBit->init();
 
     uBit->serial.printf("\033[2JStarted micro:bit!\n");
 
     uBit->serial.printf("Setting up ESP-01...\n");
 
-    auto esp_01_message_routing = Esp01MessageRouting {
-        "",
-        ""
-    };
-
     auto esp01sSurrogate = std::make_shared<Esp01MessagingSurrogate>(
-            esp_01_message_routing,
             uBit->io.P14, uBit->io.P13, 32, 32
     );
 
-    // esp01sSurrogate->init();
+    esp01sSurrogate->init();
 
     uBit->serial.printf("Setting up microphone...\n");
 
@@ -322,6 +300,6 @@ int main() {
 
     #pragma ide diagnostic ignored "EndlessLoop"
     while (true) {
-        uBit->wait(10);
+        uBit->wait(100);
     }
 }
