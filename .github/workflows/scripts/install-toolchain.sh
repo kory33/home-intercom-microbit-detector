@@ -7,7 +7,7 @@ sudo apt-get install -y cmake ninja-build
 
 toolchain_name=gcc-arm-none-eabi-10-2020-q4-major
 
-PATH=$PATH:/usr/local/bin/$toolchain_name/bin
+export PATH=$PATH:/usr/local/bin/$toolchain_name/bin
 
 # install arm-gcc toolchain using the official distribution
 if ! command -v arm-none-eabi-gcc; then
