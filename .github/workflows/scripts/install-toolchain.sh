@@ -19,5 +19,5 @@ if ! command -v arm-none-eabi-gcc; then
   echo "$expected_md5 $tarball_filename" | md5sum -c -
 
   tar -jxvf $tarball_filename && rm $tarball_filename
-  mv $toolchain_name /usr/local/bin
+  sudo mv $toolchain_name /usr/local/bin
 fi

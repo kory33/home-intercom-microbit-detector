@@ -1,4 +1,4 @@
-name: Build CODAL
+name: Build hexfile
 
 on:
   push:
