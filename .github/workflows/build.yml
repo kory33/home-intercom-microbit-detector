@@ -11,14 +11,29 @@ jobs:
     name: build and upload hex
     steps:
       - uses: actions/checkout@v2
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date '+%Y%m%d-%H%M%S')"
+
+      - name: Cache arm-gcc
+        uses: actions/cache@v2
+        with:
+          path: |
+            /usr/local/bin/gcc-arm-none-eabi-10-2020-q4-major
+          key: arm-gcc-${{ runner.os }}-${{ steps.date.outputs.date }}
+          restore-keys: |
+            arm-gcc-${{ runner.os }}-${{ steps.date.outputs.date }}
+            arm-gcc-${{ runner.os }}-
+            arm-gcc-
       - name: Install toolchain
-        run: sh ./.github/workflows/scripts/install-toolchain-ubuntu.sh
+        run: sh ./.github/workflows/scripts/install-toolchain.sh
       - name: Check Versions
         run: |
           arm-none-eabi-gcc --version
           cmake --version
           ninja --version
-      - name: Build using build.py
+
+      - name: Build hex file
         run: python build.py
       - name: Upload hex file
         uses: actions/upload-artifact@v1
