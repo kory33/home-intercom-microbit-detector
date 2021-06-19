@@ -35,7 +35,6 @@ def build(clean, verbose = False):
             system("make -j 10")
 
     print("copying files...")
-    system("copy ..\MICROBIT.hex D:\MICROBIT.hex")
 
 def read_json(fn):
     json_file = ""
