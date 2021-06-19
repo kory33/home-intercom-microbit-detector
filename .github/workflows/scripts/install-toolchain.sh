@@ -6,7 +6,7 @@ sudo add-apt-repository -y ppa:adrozdoff/cmake && sudo apt-get update -qq
 sudo apt-get install -y cmake ninja-build
 
 toolchain_name=gcc-arm-none-eabi-10-2020-q4-major
-toolchain_path=/opt/github/$toolchain_name/bin
+toolchain_path=/opt/$toolchain_name/bin
 
 # add toolchain to path
 export PATH=$PATH:$toolchain_path
@@ -22,5 +22,5 @@ if ! command -v arm-none-eabi-gcc; then
   echo "$expected_md5 $tarball_filename" | md5sum -c -
 
   tar -jxvf $tarball_filename && rm $tarball_filename
-  sudo mv $toolchain_name /opt/github/
+  mv $toolchain_name /opt/
 fi
