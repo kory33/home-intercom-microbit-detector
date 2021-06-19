@@ -19,7 +19,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            /usr/local/bin/gcc-arm-none-eabi-10-2020-q4-major
+            /opt/gcc-arm-none-eabi-10-2020-q4-major
           key: arm-gcc-${{ runner.os }}-${{ steps.date.outputs.date }}
           restore-keys: |
             arm-gcc-${{ runner.os }}-${{ steps.date.outputs.date }}
