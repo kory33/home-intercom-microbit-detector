@@ -58,7 +58,7 @@ public:
     [[noreturn]] void beginPingRemoteLoop();
 };
 
-[[noreturn]] void beginSurrogateCommandLoop(void* surrogate);
+void beginSurrogateCommandLoopUsing(Esp01SMessagingSurrogate* surrogate);
 
-[[noreturn]] void beginPingRemoteLoop(void* surrogate);
+void beginPingRemoteLoopUsing(Esp01SMessagingSurrogate* surrogate);
 

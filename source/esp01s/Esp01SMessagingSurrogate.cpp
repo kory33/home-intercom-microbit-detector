@@ -81,10 +81,20 @@ void Esp01SMessagingSurrogate::beginPingRemoteLoop() {
     }
 }
 
-void beginSurrogateCommandLoop(void *surrogate) {
+
+void surrogateCommandLoopEntryPoint(void* surrogate) {
     static_cast<Esp01SMessagingSurrogate*>(surrogate)->beginCommandLoop();
 }
 
-void beginPingRemoteLoop(void *surrogate) {
+void beginSurrogateCommandLoopUsing(Esp01SMessagingSurrogate* surrogate) {
+    codal::create_fiber(surrogateCommandLoopEntryPoint, surrogate);
+}
+
+
+void pingRemoteLoopEntryPoint(void* surrogate) {
     static_cast<Esp01SMessagingSurrogate*>(surrogate)->beginPingRemoteLoop();
+}
+
+void beginPingRemoteLoopUsing(Esp01SMessagingSurrogate* surrogate) {
+    codal::create_fiber(pingRemoteLoopEntryPoint, surrogate);
 }
