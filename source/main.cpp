@@ -211,27 +211,55 @@ public:
     }
 };
 
-auto uBit = std::make_unique<MicroBit>();
-
 enum class Esp01SCustomCommand : char {
     ConfirmStartup = 'C',
-    ConfirmRemoteAlive = 'R',
+    PingRemote = 'R',
     NotifySoundDetection = 'N',
+    QueryPreviousResult = 'P',
+    ForgetPreviousResult = 'Q',
 };
 
-class Esp01MessagingSurrogate
+static uint16_t command_timestamp = 0;
+class TimeStampedCommand {
+public:
+    const Esp01SCustomCommand command;
+    const uint16_t timestamp;
+
+    explicit TimeStampedCommand(Esp01SCustomCommand command) :
+      command(command),
+      timestamp(command_timestamp) {};
+};
+
+/**
+ * The class of objects acting as a middle-man of communication with ESP-01S module.
+ */
+class Esp01SMessagingSurrogate
 {
+    static const uint16_t command_completed_event_id = 0x5000;
+
+    MessageBus event_bus;
     const std::unique_ptr<MicroBitSerial> serial;
+    std::queue<TimeStampedCommand> command_queue;
+
+    void flushRx() {
+        serial->clearRxBuffer();
+    }
+
+    void executeAndWaitCommand(Esp01SCustomCommand command) {
+        const auto timestamped = TimeStampedCommand(command);
+
+        command_queue.push(timestamped);
+
+        fiber_wait_for_event(command_completed_event_id, timestamped.timestamp);
+    }
 
     void sendCommand(Esp01SCustomCommand command) {
         serial->putc(static_cast<char>(command));
     }
 
-    void flushRx() const {
-        serial->clearRxBuffer();
-    }
+    [[nodiscard]] std::string waitAndReadAsync(unsigned int size) {
+        constexpr auto sleep_ms = 100;
 
-    [[nodiscard]] std::string waitAndReadAsync(unsigned long sleep_ms, unsigned int size) const {
         fiber_sleep(sleep_ms);
 
         const auto read_result = serial->read((int) size, ASYNC);
@@ -239,67 +267,127 @@ class Esp01MessagingSurrogate
         return std::string(read_result.toCharArray());
     }
 
+    /**
+     * Expect to read the string immediately after 100ms has passed, and then clear RX.
+     * @return true iff we have found the expected string on RX after sleeping for 100ms.
+     */
+    bool expectToRead(const std::string& expected) {
+        const auto response = waitAndReadAsync(expected.length());
+
+        flushRx();
+
+        return response == expected;
+    }
+
 public:
-    Esp01MessagingSurrogate(NRF52Pin tx,
-                            NRF52Pin rx,
-                            uint8_t rxBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE,
-                            uint8_t txBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE):
-        serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)) {};
+    Esp01SMessagingSurrogate(const MessageBus& message_bus,
+                             NRF52Pin tx,
+                             NRF52Pin rx,
+                             uint8_t rxBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE,
+                             uint8_t txBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE):
+        event_bus(message_bus),
+        serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)),
+        command_queue() {};
 
     /**
-     * On assuming that command echo back is turned on, initialize the module
+     * Wait until ESP-01S module is able to answer us.
      */
     void init() {
-        const std::string expected_echo = "C:STARTED";
-
-        while (true) {
-            sendCommand(Esp01SCustomCommand::ConfirmStartup);
-
-            auto read_string = waitAndReadAsync(300, expected_echo.length());
-
-            if (read_string == expected_echo) return;
-
-            flushRx();
-        }
+        executeAndWaitCommand(Esp01SCustomCommand::ConfirmStartup);
     }
 
     void onSoundDetectedEvent() {
-        sendCommand(Esp01SCustomCommand::NotifySoundDetection);
+        executeAndWaitCommand(Esp01SCustomCommand::NotifySoundDetection);
+    }
+
+    /**
+     * Run the command-loop. The behaviour is undefined if this function is executed more than once.
+     */
+    [[noreturn]] void beginCommandLoop() {
+        while (true) {
+            if (!command_queue.empty()) {
+                const auto command = command_queue.front();
+                const auto expected = std::string("COMPLETED:") + static_cast<char>(command.command);
+
+                sendCommand(command.command);
+
+                while (true) {
+                    // if we have got some response from the module regarding the command
+                    if (expectToRead(expected)) break;
+
+                    sendCommand(Esp01SCustomCommand::QueryPreviousResult);
+                }
+
+                event_bus.send(Event(command_completed_event_id, command.timestamp));
+
+                sendCommand(Esp01SCustomCommand::ForgetPreviousResult);
+            }
+
+            schedule();
+        }
+    }
+
+    /**
+     * Run the task to ping remote every half a second.
+     */
+    [[noreturn]] void beginPingRemoteLoop() {
+        constexpr auto ping_interval_ms = 500;
+
+        while (true) {
+            executeAndWaitCommand(Esp01SCustomCommand::PingRemote);
+            fiber_sleep(ping_interval_ms);
+        }
     }
 };
 
+[[noreturn]] void beginSurrogateCommandLoop(void* surrogate) {
+    static_cast<Esp01SMessagingSurrogate*>(surrogate)->beginCommandLoop();
+}
+
+[[noreturn]] void beginPingRemoteLoop(void* surrogate) {
+    static_cast<Esp01SMessagingSurrogate*>(surrogate)->beginPingRemoteLoop();
+}
+
 int main() {
-    uBit->init();
+    {
+        auto uBit = std::make_unique<MicroBit>();
 
-    uBit->serial.printf("\033[2JStarted micro:bit!\n");
+        uBit->init();
 
-    uBit->serial.printf("Setting up ESP-01...\n");
+        uBit->serial.printf("\033[2JStarted micro:bit!\n");
 
-    auto esp01sSurrogate = std::make_shared<Esp01MessagingSurrogate>(
-            uBit->io.P14, uBit->io.P13, 32, 32
-    );
+        uBit->serial.printf("Setting up ESP-01...\n");
 
-    esp01sSurrogate->init();
+        auto esp01sSurrogate = std::make_shared<Esp01SMessagingSurrogate>(
+                uBit->messageBus,
+                uBit->io.P14, uBit->io.P13, 32, 32
+        );
 
-    uBit->serial.printf("Setting up microphone...\n");
+        esp01sSurrogate->init();
 
-    // activate microphone
-    uBit->io.runmic.setDigitalValue(1);
-    uBit->io.runmic.setHighDrive(true);
+        uBit->serial.printf("Setting up microphone...\n");
 
-    auto mic_channel = std::unique_ptr<NRF52ADCChannel>(uBit->adc.getChannel(uBit->io.microphone));
-    mic_channel->setGain(7, 0);
-    mic_channel->output.setBlocking(true);
+        // activate microphone
+        uBit->io.runmic.setDigitalValue(1);
+        uBit->io.runmic.setHighDrive(true);
 
-    auto sink = std::make_unique<FrequencyDetectorController>(
-            mic_channel->output, uBit->serial,
-            [esp01sSurrogate] () { esp01sSurrogate->onSoundDetectedEvent(); }
-    );
+        auto mic_channel = std::unique_ptr<NRF52ADCChannel>(uBit->adc.getChannel(uBit->io.microphone));
+        mic_channel->setGain(7, 0);
+        mic_channel->output.setBlocking(true);
 
-    mic_channel->output.connect(*sink);
+        auto sink = std::make_unique<FrequencyDetectorController>(
+                mic_channel->output, uBit->serial,
+                [esp01sSurrogate]() { esp01sSurrogate->onSoundDetectedEvent(); }
+        );
+
+        mic_channel->output.connect(*sink);
+
+        codal::create_fiber(beginSurrogateCommandLoop, esp01sSurrogate.get());
+        codal::create_fiber(beginPingRemoteLoop, esp01sSurrogate.get());
+    }
 
     #pragma ide diagnostic ignored "EndlessLoop"
     while (true) {
-        uBit->wait(100);
+        schedule();
     }
 }
