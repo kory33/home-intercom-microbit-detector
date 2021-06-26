@@ -3,8 +3,8 @@
 #include "MicroBit.h"
 
 #include "freq_detector/FrequencyDetectorController.hpp"
-#include "esp01s/Esp01SCommand.hpp"
-#include "esp01s/Esp01SMessagingSurrogate.hpp"
+#include "esp01s/CustomCommand.hpp"
+#include "esp01s/MessagingSurrogate.hpp"
 
 void initialize_system() {
     const auto uBit = std::make_unique<MicroBit>();
@@ -16,7 +16,7 @@ void initialize_system() {
     uBit->serial.printf("Setting up ESP-01...\n");
 
     // this surrogate object is supposed to remain in heap for as long as the program runs
-    const auto esp01sSurrogate = new Esp01SMessagingSurrogate(
+    const auto esp01sSurrogate = new esp_01s::MessagingSurrogate(
             uBit->messageBus,
             uBit->io.P14, uBit->io.P13, 32, 32
     );
@@ -40,8 +40,8 @@ void initialize_system() {
 
     mic_channel->output.connect(*sink);
 
-    beginSurrogateCommandLoopUsing(esp01sSurrogate);
-    beginPingRemoteLoopUsing(esp01sSurrogate);
+    esp_01s::beginSurrogateCommandLoopUsing(esp01sSurrogate);
+    esp_01s::beginPingRemoteLoopUsing(esp01sSurrogate);
 }
 
 [[noreturn]] void schedule_forever() {
