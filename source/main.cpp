@@ -40,7 +40,7 @@ int main() {
 
     const auto sink = std::make_unique<FrequencyDetectorController>(
             mic_channel->output, uBit->serial,
-            [esp01sSurrogate]() { esp01sSurrogate->onSoundDetectedEvent(); }
+            [esp01sSurrogate]() { esp01sSurrogate->asyncNotifySoundDetection(); }
     );
 
     mic_channel->output.connect(*sink);

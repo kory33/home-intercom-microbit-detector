@@ -37,13 +37,21 @@ bool MessagingSurrogate::expectToRead(const std::string &expected) {
 }
 
 MessagingSurrogate::MessagingSurrogate(const MessageBus &message_bus, NRF52Pin tx, NRF52Pin rx,
-                                                   uint8_t rxBufferSize, uint8_t txBufferSize) :
+                                       uint8_t rxBufferSize, uint8_t txBufferSize) :
         event_bus(message_bus),
         serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)),
         command_queue() {}
 
-void MessagingSurrogate::onSoundDetectedEvent() {
+void MessagingSurrogate::notifySoundDetection() {
     executeAndWaitCommand(CustomCommand::NotifySoundDetection);
+}
+
+void notifySoundDetectionEntryPoint(void* surrogate) {
+    static_cast<MessagingSurrogate*>(surrogate)->notifySoundDetection();
+}
+
+void MessagingSurrogate::asyncNotifySoundDetection() {
+    create_fiber(notifySoundDetectionEntryPoint, this);
 }
 
 void MessagingSurrogate::beginCommandLoop() {

@@ -39,14 +39,22 @@ namespace esp_01s {
                                  NRF52Pin tx,
                                  NRF52Pin rx,
                                  uint8_t rxBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE,
-                                 uint8_t txBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE);;
+                                 uint8_t txBufferSize = CODAL_SERIAL_DEFAULT_BUFFER_SIZE);
 
         /**
          * Wait until ESP-01S module is able to answer us.
          */
         void init();
 
-        void onSoundDetectedEvent();
+        /**
+         * Notify the detection of sound to ESP-01S module.
+         */
+        void notifySoundDetection();
+
+        /**
+         * Asynchronously notify the detection of sound to ESP-01S module.
+         */
+        void asyncNotifySoundDetection();
 
         /**
          * Run the command-loop. The behaviour is undefined if this function is executed more than once.
