@@ -54,20 +54,19 @@ void MessagingSurrogate::beginCommandLoop() {
     while (true) {
         if (!command_queue.empty()) {
             const auto command = command_queue.front();
-            const auto expected = std::string("COMPLETED:") + static_cast<char>(command.command);
-
-            sendCommand(command.command);
+            const auto expected = std::string("DONE:") + static_cast<char>(command.command);
 
             while (true) {
+                // these commands are always idempotent
+                sendCommand(command.command);
+
                 // if we have got some response from the module regarding the command
                 if (expectToRead(expected)) break;
-
-                sendCommand(CustomCommand::QueryPreviousResult);
             }
 
             event_bus.send(Event(command_completed_event_id, command.timestamp));
 
-            sendCommand(CustomCommand::ForgetPreviousResult);
+            sendCommand(CustomCommand::GetReadyForNextCommand);
         }
 
         schedule();
@@ -75,7 +74,13 @@ void MessagingSurrogate::beginCommandLoop() {
 }
 
 void MessagingSurrogate::beginPingRemoteLoop() {
-    constexpr auto ping_interval_ms = 500;
+    /**
+     * SSL handshaking on ESP01S module takes substantial time (not exceeding 10s)
+     * so ping every 20s approximately (excluding command execution time)
+     *
+     * We should probably raise an alert on the server-side if we do not see a ping for 1 minute.
+     */
+    constexpr auto ping_interval_ms = 20000;
 
     while (true) {
         executeAndWaitCommand(CustomCommand::PingRemote);
