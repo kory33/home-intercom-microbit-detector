@@ -45,8 +45,5 @@ int main() {
 
     mic_channel->output.connect(*sink);
 
-    beginSurrogateCommandLoopUsing(esp01sSurrogate);
-    beginPingRemoteLoopUsing(esp01sSurrogate);
-
     schedule_forever();
 }

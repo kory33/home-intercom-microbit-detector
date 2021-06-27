@@ -58,9 +58,4 @@ namespace esp_01s {
          */
         [[noreturn]] void beginPingRemoteLoop();
     };
-
-    void beginSurrogateCommandLoopUsing(MessagingSurrogate* surrogate);
-
-    void beginPingRemoteLoopUsing(MessagingSurrogate* surrogate);
-
 }

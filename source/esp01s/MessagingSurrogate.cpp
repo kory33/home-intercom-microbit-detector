@@ -42,10 +42,6 @@ MessagingSurrogate::MessagingSurrogate(const MessageBus &message_bus, NRF52Pin t
         serial(std::make_unique<MicroBitSerial>(tx, rx, rxBufferSize, txBufferSize)),
         command_queue() {}
 
-void MessagingSurrogate::init() {
-    executeAndWaitCommand(CustomCommand::ConfirmStartup);
-}
-
 void MessagingSurrogate::onSoundDetectedEvent() {
     executeAndWaitCommand(CustomCommand::NotifySoundDetection);
 }
@@ -88,20 +84,27 @@ void MessagingSurrogate::beginPingRemoteLoop() {
     }
 }
 
-
 void surrogateCommandLoopEntryPoint(void* surrogate) {
     static_cast<MessagingSurrogate*>(surrogate)->beginCommandLoop();
 }
 
-void esp_01s::beginSurrogateCommandLoopUsing(MessagingSurrogate* surrogate) {
+void beginSurrogateCommandLoopUsing(MessagingSurrogate* surrogate) {
     codal::create_fiber(surrogateCommandLoopEntryPoint, surrogate);
 }
-
 
 void pingRemoteLoopEntryPoint(void* surrogate) {
     static_cast<MessagingSurrogate*>(surrogate)->beginPingRemoteLoop();
 }
 
-void esp_01s::beginPingRemoteLoopUsing(MessagingSurrogate* surrogate) {
+void beginPingRemoteLoopUsing(MessagingSurrogate* surrogate) {
     codal::create_fiber(pingRemoteLoopEntryPoint, surrogate);
+}
+
+void MessagingSurrogate::init() {
+    // this must be before we wait for ConfirmStartup because command-loop is initially not running
+    beginSurrogateCommandLoopUsing(this);
+
+    executeAndWaitCommand(CustomCommand::ConfirmStartup);
+
+    beginPingRemoteLoopUsing(this);
 }
